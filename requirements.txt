@@ -1,6 +1,9 @@
-numpy
-gymnasium
-mujoco==3.2.7
+numpy==1.26.0
+matplotlib==3.8.4
+gymnasium==1.2.0
+mujoco==3.3.5
+pygame==2.6.1
+jupyter==1.1.1
+stable-baselines3==2.7.0
 
-pygame
-jupyter # python -m ipykernel install --user --name myenv --display-name "Python (myenv)"
+
