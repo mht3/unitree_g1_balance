@@ -1,0 +1,6 @@
+numpy
+gymnasium
+mujoco==3.2.7
+
+pygame
+jupyter # python -m ipykernel install --user --name myenv --display-name "Python (myenv)"
