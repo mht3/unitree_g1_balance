@@ -20,4 +20,57 @@
     <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
     <geom name="floor" size="0 0 0.05" type="plane" material="groundplane"/>
   </worldbody>
+  <keyframe>
+    <!--
+    The values below are split into rows for readibility:
+      pelvis position (3)
+      pelvis orientation (4 i.e. a quaternion)
+      left hip pitch, roll, yaw
+      left knee joint, left ankle pitch, roll
+      right hip pitch, roll, yaw
+      right knee joint, right ankle pitch, roll
+      waist yaw
+      left shoulder pitch, roll, yaw
+      left elbow, left wrist roll
+      right shoulder pitch, roll, yaw
+      right elbow, right wrist roll
+    -->
+    <key name="stand"
+        qpos="0 0 0.792
+              1 0 0 0
+              0 0 0
+              0 0 0
+              0 0 0
+              0 0 0
+              0
+              0 0 0
+              0 0
+              0 0 0
+              0 0"/>
+    <!-- <key name="left_leg_balance"
+        qpos="0 0 0.800
+              0.999 -0.044 0 0
+              0 0 0.0872665
+              0 0 0
+              0 0 0
+              1.4 0 0
+              0
+              0 0 0
+              -0.5 0
+              0 0 0
+              0 0"/>         -->
+    <key name="left_leg_balance"
+        qpos="0 0 0.796
+              0.998 -0.044 0.044 -0.002
+              0 0 0 
+              0 -0.0872665 0.0872665
+              0 0 0
+              1.8 0 0
+              0
+              0 0 0
+              -0.8 0
+              0 0 0
+              0 0"/>
+              
+  </keyframe>
 </mujoco>

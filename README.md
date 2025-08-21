@@ -14,13 +14,14 @@ cd unitree_g1_balance
 Create a new conda environment with Python 3.10.
 ```bash
 conda create -n g1_balance python=3.10
+conda activate g1_balance
 ```
 
 Install torch
 <details>
 <summary>PyTorch on GPU</summary>
 <br>
-Install PyTorch 2.2.1 with CUDA 12.6
+Install PyTorch 2.7.1 with CUDA 12.6
   
 ```sh
 pip install torch==2.7.1 torchvision==0.22.1 torchaudio==2.7.1 --index-url https://download.pytorch.org/whl/cu126
