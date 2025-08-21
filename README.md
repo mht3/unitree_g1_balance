@@ -1,6 +1,6 @@
 # Unitree G1 Balance
 
-MuJoCo environments, training scripts, and sim2real deployment code for the Unitree G1 humanoid robot.
+MuJoCo environments, training scripts, and sim2real deployment code for the Unitree G1 EDU 23 DoF robot.
 
 ## Environment Setup
 
