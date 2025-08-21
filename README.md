@@ -58,3 +58,6 @@ To test that mujoco was correctly installed, try loading the Unitree G1 XML scen
 ```bash
 python -m mujoco.viewer --mjcf=environments/g1/unitree_robots/g1/scene_23dof.xml 
 ```
+
+<img width="1275" height="756" alt="image" src="https://github.com/user-attachments/assets/1135f7b5-a2d5-4fbe-b352-81af07aeff72" />
+
