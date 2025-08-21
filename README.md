@@ -46,12 +46,15 @@ pip install -r requirements.txt
 
 Add the environment to ipykernel for running Jupyter notebooks.
 
+```bash
 python -m ipykernel install --user --name g1_balance --display-name "Python (g1_balance)"
+```
+
 
 ### Mujoco
 
 
-To test that mujoco was correctly installed, try out the G1 XML scene. A MuJoCo GUI should pop up.
+To test that mujoco was correctly installed, try loading the Unitree G1 XML scene. A MuJoCo GUI should pop up.
 ```bash
-python -m mujoco.viewer --mjcf=unitree_robots/g1/scene_23dof.xml 
+python -m mujoco.viewer --mjcf=environments/g1/unitree_robots/g1/scene_23dof.xml 
 ```
