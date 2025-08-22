@@ -36,7 +36,7 @@
       right elbow, right wrist roll
     -->
     <key name="stand"
-        qpos="0 0 0.792
+        qpos="0 0 0.79127
               1 0 0 0
               0 0 0
               0 0 0

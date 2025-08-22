@@ -1,0 +1,64 @@
+<mujoco model="g1_23dof scene">
+  <include file="g1_23dof.xml"/>
+
+  <statistic center="0 0 0.5" extent="2.0"/>
+
+  <visual>
+    <headlight diffuse="0.6 0.6 0.6" ambient="0.3 0.3 0.3" specular="0 0 0"/>
+    <rgba haze="0.15 0.25 0.35 1"/>
+    <global azimuth="-130" elevation="-20"/>
+  </visual>
+
+  <asset>
+    <texture type="skybox" builtin="gradient" rgb1="0.3 0.5 0.7" rgb2="0 0 0" width="512" height="3072"/>
+    <texture type="2d" name="groundplane" builtin="checker" mark="edge" rgb1="0.2 0.3 0.4" rgb2="0.1 0.2 0.3"
+      markrgb="0.8 0.8 0.8" width="300" height="300"/>
+    <material name="groundplane" texture="groundplane" texuniform="true" texrepeat="5 5" reflectance="0.2"/>
+  </asset>
+
+  <worldbody>
+    <light pos="0 0 1.5" dir="0 0 -1" directional="true"/>
+    <geom name="floor" size="0 0 0.05" type="plane" material="groundplane"/>
+  </worldbody>
+  <keyframe>
+    <!--
+    The values below are split into rows for readibility:
+      pelvis position (3)
+      pelvis orientation (4 i.e. a quaternion)
+      left hip pitch, roll, yaw
+      left knee joint, left ankle pitch, roll
+      right hip pitch, roll, yaw
+      right knee joint, right ankle pitch, roll
+      waist yaw
+      left shoulder pitch, roll, yaw
+      left elbow, left wrist roll
+      right shoulder pitch, roll, yaw
+      right elbow, right wrist roll
+    -->
+    <key name="stand"
+        qpos="0 0 0.79127
+              1 0 0 0
+              0 0 0
+              0 0 0
+              0 0 0
+              0 0 0
+              0
+              0 0 0
+              0 0
+              0 0 0
+              0 0"/>
+    <key name="left_leg_balance"
+        qpos="0 0 0.796
+              0.998 -0.044 0.044 -0.002
+              0 0 0 
+              0 -0.0872665 0.0872665
+              0 0 0
+              1.8 0 0
+              0
+              0 0 0
+              -0.8 0
+              0 0 0
+              0 0"/>
+              
+  </keyframe>
+</mujoco>
