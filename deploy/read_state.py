@@ -215,23 +215,16 @@ class G1Observer:
 
 
 def main():
-    """Main entry point."""
-    parser = argparse.ArgumentParser(description="G1 Robot Observer")
+    parser = argparse.ArgumentParser(description="G1 Reader")
     parser.add_argument("net", type=str, help="network interface (e.g., enp68s0f1)")
     parser.add_argument("--max-steps", type=int, default=1000, help="Maximum observation steps")
     parser.add_argument("--print-rate", type=int, default=10, help="Print every N steps")
-    parser.add_argument("--test-connection", action="store_true", help="Test connection and exit")
     
     args = parser.parse_args()
     
     try:
         # Initialize observer
-        observer = G1Observer(args.net)
-        
-        if args.test_connection:
-            print("Connection test successful!")
-            return 0
-        
+        observer = G1Observer(args.net) 
         # Run observation loop
         observer.run_observation_loop(args.max_steps, args.print_rate)
         
