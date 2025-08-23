@@ -25,6 +25,10 @@ class G1LQR(LQRPolicy):
         lr_schedule = lambda _: 0.
         ActorCriticPolicy.__init__(self, self.observation_space, self.action_space, lr_schedule=lr_schedule)
 
+        # assert if all eigenvalues have negative, real parts
+        self.check_stability(self.A, self.B, self.K)
+
+
     @staticmethod
     def lqr(A, B, Q, R):
         '''
@@ -32,10 +36,7 @@ class G1LQR(LQRPolicy):
         '''
         P = linalg.solve_discrete_are(A, B, Q, R)
         K = linalg.inv(R + B.T @ P @ B) @ B.T @ P @ A
-        # remove root position and velocity indices (12 elements)
-        K_filtered = K[:, 6:29]
-        K_filtered = np.concatenate([K_filtered, K[:, 35:58]], axis=1)
-        return K_filtered
+        return K
 
     def define_state_space_matrices(self):
         '''
@@ -79,9 +80,16 @@ class G1LQR(LQRPolicy):
         B = np.zeros((2*self.nv, self.nu))
         epsilon = 1e-6
         flg_centered = True
+        # uses finite difference to get state space model.
         mujoco.mjd_transitionFD(self.model, self.data, epsilon, flg_centered, A, B, None, None)
 
-        return A, B
+        joint_indices = range(6, self.nv)
+        joint_vel_indices = range(self.nv + 6, 2*self.nv) 
+        joint_state_indices = list(joint_indices) + list(joint_vel_indices)
+        A_joint = A[np.ix_(joint_state_indices, joint_state_indices)]
+        B_joint = B[joint_state_indices, :]
+
+        return A_joint, B_joint
 
     def define_cost_matrices(self):
         '''
@@ -115,45 +123,30 @@ class G1LQR(LQRPolicy):
             and ('hip' in name or 'knee' in name or 'ankle' in name)
         ]
         balance_dofs = left_leg_dofs + waist_dofs
-
         balance_dofs = balance_dofs + right_leg_dofs
             
         other_dofs = np.setdiff1d(body_dofs, balance_dofs)
 
         # penalties for lqr
-
         BALANCE_COST        = 1000  # Balancing.
         BALANCE_JOINT_COST  = 3    # Joints required for balancing.
         OTHER_JOINT_COST    = 0.3    # Other joints.
         R = np.eye(self.nu)
         
-        # Q matrix for joint-only root + joint
-        Q = 10 * np.eye(58)
-        Q[range(self.nu), range(self.nu)] = BALANCE_COST  # First 23 diagonal elements (joint positions)
-        Q[root_dofs, root_dofs] = 0
-        # Q[balance_dofs, balance_dofs] *= BALANCE_JOINT_COST
-        # Q[other_dofs, other_dofs] *= OTHER_JOINT_COST
+        # # Q matrix for joint-only root + joint
+        # Q = 10 * np.eye(58)
+        # Q[range(self.nu), range(self.nu)] = BALANCE_COST  # First 23 diagonal elements (joint positions)
+        # Q[root_dofs, root_dofs] = 0
+        # # Q[balance_dofs, balance_dofs] *= BALANCE_JOINT_COST
+        # # Q[other_dofs, other_dofs] *= OTHER_JOINT_COST
+        # Q matrix for joint-only state space (46 dimensions: 23 joint positions + 23 joint velocities)
+        n_joint_states = 2 * (self.nv - 6)  # 2 * 23 = 46
+        Q = np.eye(n_joint_states)
+        
+        Q[:23, :23] *= BALANCE_COST 
+        Q[23:, 23:] *= 1.0
 
-        return Q, R    
- 
-    def quaternion_difference(self, q1, q2):
-        """
-        Compute the difference between two quaternions in the tangent space.
-        Returns a 3D vector representing the angular difference.
-        """
-        # Convert to scipy format [x, y, z, w]
-        q1_scipy = np.array([q1[1], q1[2], q1[3], q1[0]])  # [x, y, z, w]
-        q2_scipy = np.array([q2[1], q2[2], q2[3], q2[0]])  # [x, y, z, w]
-        
-        # Compute relative rotation
-        r1 = Rotation.from_quat(q1_scipy)
-        r2 = Rotation.from_quat(q2_scipy)
-        relative_rot = r2 * r1.inv()
-        
-        # Convert to axis-angle representation (3D)
-        axis_angle = relative_rot.as_rotvec()  # This is 3D!
-        
-        return axis_angle
+        return Q, R
 
     def policy(self, observation):
         # check if batch dimension is present
@@ -163,17 +156,21 @@ class G1LQR(LQRPolicy):
             batch_dim = True
             observation = observation[0]
 
+        # obs: [angular_velocity(3), gravity_orientation(3), relative_joint_pos(23), joint_vel(23)]
+        relative_joint_pos = observation[6:29] 
+        joint_vel = observation[29:52] 
         
-        qpos = observation[:30]
-        # make joints 
-        qpos[6:] = qpos[6:] + self.qpos0[6:]
-        qvel = observation[30:59] 
+        # Create full qpos vector for mj_differentiatePos (needs same dimension as qpos0)
+        joint_pos = relative_joint_pos + self.qpos0[6:]
+        qpos_current = self.qpos0.copy()  # Start with equilibrium pose
+        qpos_current[6:] = joint_pos  # Update joint positions
         
-        # Compute state difference from equilibrium
+        # Compute state difference from equilibrium for joint-only state
         dq = np.zeros(self.model.nv)
-        mujoco.mj_differentiatePos(self.model, dq, 1, self.qpos0, qpos)
-        
-        dx = np.concatenate([dq[6:], qvel[6:]])
+        mujoco.mj_differentiatePos(self.model, dq, 1, self.qpos0, qpos_current)
+        # dx = np.concatenate([dq[6:], qvel[6:]])
+        # Create joint-only state vector: [joint_position_errors, joint_velocities]
+        dx = np.concatenate([dq[6:], joint_vel])
 
         # LQR control law: u = ctrl0 - Kx
         du = - self.K @ dx
@@ -185,6 +182,4 @@ class G1LQR(LQRPolicy):
         if batch_dim:
             u = u[None, :]
 
-
         return u
-
