@@ -207,8 +207,6 @@ class G1BalanceEnv(MujocoEnv, utils.EzPickle):
             action_smoothness,
             render_mode,
         )
-        # z range of pelvis before termination (only care about lower bound)
-        self._healthy_z_min = 0.2
         # healthy roll and pitch range
         # roll and pitch can't exceed 78.75 degrees
         self._healthy_rp_range = 7 * np.pi / 16
@@ -221,23 +219,23 @@ class G1BalanceEnv(MujocoEnv, utils.EzPickle):
         # Left leg: hip pitch(0), hip roll(1), hip yaw(2), knee(3), ankle pitch(4), ankle roll(5)
         # Right leg: hip pitch(6), hip roll(7), hip yaw(8), knee(9), ankle pitch(10), ankle roll(11)
         leg_indices = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11]  # 12 leg joints
-        self._position_weight[leg_indices] = 5.0  # Higher penalty for leg joints
+        self._position_weight[leg_indices] = 5.0
         waist_index = 12
-        self._position_weight[waist_index] = 3.0  # Moderate penalty for waist
+        self._position_weight[waist_index] = 3.0
         # Left arm: shoulder pitch(13), shoulder roll(14), shoulder yaw(15), elbow(16), wrist roll(17)
         # Right arm: shoulder pitch(18), shoulder roll(19), shoulder yaw(20), elbow(21), wrist roll(22)
-        arm_indices = [13, 14, 15, 16, 17, 18, 19, 20, 21, 22]  # 10 arm joints
+        arm_indices = [13, 14, 15, 16, 17, 18, 19, 20, 21, 22]
         self._position_weight[arm_indices] = 1.0
         
         self._joint_vel_weight = 1e-4
-        self._angular_vel_weight = 1e-2 
+        self._angular_vel_weight = 1e-4
         
         self._include_previous_actions = include_previous_actions
         self._action_smoothness = action_smoothness
         if self._action_smoothness and not self._include_previous_actions:
             raise ValueError("`action_smoothness` penalty can only be used if previous actions are included in the observation space.")
         self._previous_action = None
-        self._action_smoothness_weight = 0.01  # Weight for action smoothness penalt
+        self._action_smoothness_weight = 1e-4
         
         # Get the path to the XML file
         cur_dir = os.path.dirname(os.path.abspath(__file__))
@@ -276,8 +274,8 @@ class G1BalanceEnv(MujocoEnv, utils.EzPickle):
 
         angular_vel_size = 3  # angular velocity only
         gravity_orientation_size = 3
-        joint_pos_size = 23  # joint positions
-        joint_vel_size = 23  # joint velocities
+        joint_pos_size = 23
+        joint_vel_size = 23
         previous_actions_size = 23 if self._include_previous_actions else 0
         
         obs_size = angular_vel_size + gravity_orientation_size + joint_pos_size + joint_vel_size + previous_actions_size
@@ -323,27 +321,30 @@ class G1BalanceEnv(MujocoEnv, utils.EzPickle):
     def _calculate_obs_indices(self):
         """Calculate the indices for different observation components."""
         indices = {}
+
+        indices['orientation_start'] = 0
+        indices['orientation_end'] = 4
+
+        # Angular velocity
+        indices['angular_vel_start'] = indices['orientation_end']
+        indices['angular_vel_end'] = indices['orientation_end'] + 3
         
-        # Angular velocity (always present) - 3 elements: angular velocity only
-        indices['angular_vel_start'] = 0
-        indices['angular_vel_end'] = 3
+        # Projected gravity
+        indices['gravity_start'] = indices['angular_vel_end']
+        indices['gravity_end'] = indices['angular_vel_end'] + 3
         
-        # Projected gravity (always present) - 3 elements
-        indices['gravity_start'] = 3
-        indices['gravity_end'] = 6
+        # Joint positions
+        indices['joint_pos_start'] = indices['gravity_end']
+        indices['joint_pos_end'] = indices['gravity_end'] + 23
         
-        # Joint positions (always present) - 23 elements
-        indices['joint_pos_start'] = 6
-        indices['joint_pos_end'] = 29
-        
-        # Joint velocities (always present) - 23 elements
-        indices['joint_vel_start'] = 29
-        indices['joint_vel_end'] = 52
+        # Joint velocities
+        indices['joint_vel_start'] = indices['joint_pos_end']
+        indices['joint_vel_end'] = indices['joint_pos_end'] + 23
         
         # Previous actions (optional)
         if self._include_previous_actions:
-            indices['actions_start'] = 52
-            indices['actions_end'] = 75
+            indices['actions_start'] = indices['joint_vel_end']
+            indices['actions_end'] = indices['joint_vel_end'] + 23
         else:
             indices['actions_start'] = None
             indices['actions_end'] = None
@@ -358,18 +359,19 @@ class G1BalanceEnv(MujocoEnv, utils.EzPickle):
         self._default_joint_pos = self.data.qpos[7:].copy()
 
     def _get_obs(self):
-        # Angular velocity (3 elements) - from base angular velocity
-        angular_velocity = self.data.qvel[3:6]  # angular velocity only
+
+        # measurements from IMU data (base/pelvis frame)
+        quat = self.data.qpos[3:7] 
+        angular_velocity = self.data.qvel[3:6]
         
-        # Projected gravity (3 elements) - always present
-        quat = self.data.qpos[3:7]  # Pelvis orientation
+        # Projected gravity (3 elements)
         gravity_orientation = get_gravity_orientation(quat)
         
-        # Joint states - make relative to default pose
-        joint_pos = self.data.qpos[7:]  # 23 joint positions
-        joint_vel = self.data.qvel[6:]  # 23 joint velocities
+        # Joint states
+        joint_pos = self.data.qpos[7:] 
+        joint_vel = self.data.qvel[6:] 
         
-        # Relative joint positions (deviation from default pose)
+        # Relative joint positions
         relative_joint_pos = joint_pos - self._default_joint_pos
         
         # Include previous actions if flag is enabled
@@ -382,7 +384,7 @@ class G1BalanceEnv(MujocoEnv, utils.EzPickle):
             previous_actions = np.array([])
         
         # Concatenate all components in the specified order
-        obs_components = [angular_velocity, gravity_orientation, relative_joint_pos, joint_vel]
+        obs_components = [quat, angular_velocity, gravity_orientation, relative_joint_pos, joint_vel]
         if self._include_previous_actions:
             obs_components.append(previous_actions)
         
@@ -433,7 +435,7 @@ class G1BalanceEnv(MujocoEnv, utils.EzPickle):
         # print("Control Cost:", quad_ctrl_cost)
         # print("Action Smoothness Cost:", action_smoothness_cost)
         # print("Termination Penalty:", termination_penalty)
-        return termination_penalty + orientation_cost + angular_vel_cost + joint_pos_cost + joint_vel_cost + quad_ctrl_cost + action_smoothness_cost
+        return 10 + termination_penalty + orientation_cost + angular_vel_cost + joint_pos_cost + joint_vel_cost + quad_ctrl_cost + action_smoothness_cost
 
     def step(self, action):
         if self._normalized_actions:
