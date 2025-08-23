@@ -88,7 +88,7 @@ class G1LQR(LQRPolicy):
         joint_state_indices = list(joint_indices) + list(joint_vel_indices)
         # orientation and angular velocity of base
         base_indices = list(range(3, 6))
-        base_vel_indices = list(range(self.nv, self.nv + 6))
+        base_vel_indices = list(range(self.nv + 3, self.nv + 6))
         base_state_indices = base_indices + base_vel_indices
         state_indices = base_state_indices + joint_state_indices
         A_ = A[np.ix_(state_indices, state_indices)]
@@ -156,10 +156,12 @@ class G1LQR(LQRPolicy):
 
         # obs: [quat (4), angular_velocity(3), gravity_orientation(3), relative_joint_pos(23), joint_vel(23)]
         quat = observation[:4]
-        angular_velocity = observation[4:7]
-        relative_gravity_orientation = observation[7:10] - np.array([0, 0, -1])
-        relative_joint_pos = observation[10:33] 
-        joint_vel = observation[33:56] 
+
+        orientation = observation[4:7]
+        angular_velocity = observation[7:10]
+        relative_gravity_orientation = observation[10:13] - np.array([0, 0, -1])
+        relative_joint_pos = observation[13:36] 
+        joint_vel = observation[36:59] 
         
         joint_pos = relative_joint_pos + self.qpos0[6:]
 
