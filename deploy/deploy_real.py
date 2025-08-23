@@ -1,32 +1,33 @@
-from legged_gym import LEGGED_GYM_ROOT_DIR
 from typing import Union
 import numpy as np
 import time
 import torch
-
+import os
 from unitree_sdk2py.core.channel import ChannelPublisher, ChannelFactoryInitialize
 from unitree_sdk2py.core.channel import ChannelSubscriber, ChannelFactoryInitialize
 from unitree_sdk2py.idl.default import unitree_hg_msg_dds__LowCmd_, unitree_hg_msg_dds__LowState_
-from unitree_sdk2py.idl.default import unitree_go_msg_dds__LowCmd_, unitree_go_msg_dds__LowState_
 from unitree_sdk2py.idl.unitree_hg.msg.dds_ import LowCmd_ as LowCmdHG
-from unitree_sdk2py.idl.unitree_go.msg.dds_ import LowCmd_ as LowCmdGo
 from unitree_sdk2py.idl.unitree_hg.msg.dds_ import LowState_ as LowStateHG
-from unitree_sdk2py.idl.unitree_go.msg.dds_ import LowState_ as LowStateGo
 from unitree_sdk2py.utils.crc import CRC
 
-from common.command_helper import create_damping_cmd, create_zero_cmd, init_cmd_hg, init_cmd_go, MotorMode
+from common.command_helper import create_damping_cmd, create_zero_cmd, init_cmd_hg, MotorMode
 from common.rotation_helper import get_gravity_orientation, transform_imu_data
 from common.remote_controller import RemoteController, KeyMap
 from config import Config
 
 
 class Controller:
-    def __init__(self, config: Config) -> None:
+    def __init__(self, config: Config, policy_type='torch', debug=True) -> None:
         self.config = config
         self.remote_controller = RemoteController()
 
-        # Initialize the policy network
-        self.policy = torch.jit.load(config.policy_path)
+        if policy_type not in ['torch', 'lqr']:
+            raise ValueError('Policy type must be either `torch` or `lqr`.')
+        self.policy_type = policy_type
+        self.debug = debug
+
+ 
+        
         # Initializing process variables
         self.qj = np.zeros(config.num_actions, dtype=np.float32)
         self.dqj = np.zeros(config.num_actions, dtype=np.float32)
@@ -35,6 +36,17 @@ class Controller:
         self.obs = np.zeros(config.num_obs, dtype=np.float32)
         self.cmd = np.array([0.0, 0, 0])
         self.counter = 0
+
+       # policy initialization
+        if self.debug == False:
+            if self.policy_type == 'torch':
+                self.policy = torch.jit.load(config.policy_path)
+            else:
+                # LQR policy
+                raise NotImplementedError         
+        else:
+            # zero controller
+            self.policy = lambda _: np.zeros(config.num_actions, dtype=np.float32)
 
         if config.msg_type == "hg":
             # g1 and h1_2 use the hg msg type
@@ -48,20 +60,8 @@ class Controller:
 
             self.lowstate_subscriber = ChannelSubscriber(config.lowstate_topic, LowStateHG)
             self.lowstate_subscriber.Init(self.LowStateHgHandler, 10)
-
-        elif config.msg_type == "go":
-            # h1 uses the go msg type
-            self.low_cmd = unitree_go_msg_dds__LowCmd_()
-            self.low_state = unitree_go_msg_dds__LowState_()
-
-            self.lowcmd_publisher_ = ChannelPublisher(config.lowcmd_topic, LowCmdGo)
-            self.lowcmd_publisher_.Init()
-
-            self.lowstate_subscriber = ChannelSubscriber(config.lowstate_topic, LowStateGo)
-            self.lowstate_subscriber.Init(self.LowStateGoHandler, 10)
-
         else:
-            raise ValueError("Invalid msg_type")
+            raise ValueError("Invalid msg_type. Must be `hg`.")
 
         # wait for the subscriber to receive data
         self.wait_for_low_state()
@@ -69,19 +69,13 @@ class Controller:
         # Initialize the command msg
         if config.msg_type == "hg":
             init_cmd_hg(self.low_cmd, self.mode_machine_, self.mode_pr_)
-        elif config.msg_type == "go":
-            init_cmd_go(self.low_cmd, weak_motor=self.config.weak_motor)
 
     def LowStateHgHandler(self, msg: LowStateHG):
         self.low_state = msg
         self.mode_machine_ = self.low_state.mode_machine
         self.remote_controller.set(self.low_state.wireless_remote)
 
-    def LowStateGoHandler(self, msg: LowStateGo):
-        self.low_state = msg
-        self.remote_controller.set(self.low_state.wireless_remote)
-
-    def send_cmd(self, cmd: Union[LowCmdGo, LowCmdHG]):
+    def send_cmd(self, cmd: LowCmdHG):
         cmd.crc = CRC().Crc(cmd)
         self.lowcmd_publisher_.Write(cmd)
 
@@ -157,10 +151,10 @@ class Controller:
             self.qj[i] = self.low_state.motor_state[self.config.leg_joint2motor_idx[i]].q
             self.dqj[i] = self.low_state.motor_state[self.config.leg_joint2motor_idx[i]].dq
 
-        # imu_state quaternion: w, x, y, z
+        # imu_state quaternion: w, x, y, z. Could also usemu_State.rpy to get roll pitch, yaw array
         quat = self.low_state.imu_state.quaternion
         ang_vel = np.array([self.low_state.imu_state.gyroscope], dtype=np.float32)
-
+        # ang_accel = np.array([self.low_state.imu_state.accelerometer], dtype=np.float32)
         if self.config.imu_type == "torso":
             # h1 and h1_2 imu is on the torso
             # imu data needs to be transformed to the pelvis frame
@@ -196,8 +190,14 @@ class Controller:
         self.obs[9 + num_actions * 3 + 1] = cos_phase
 
         # Get the action from the policy network
-        obs_tensor = torch.from_numpy(self.obs).unsqueeze(0)
-        self.action = self.policy(obs_tensor).detach().numpy().squeeze()
+        if self.policy_type == 'torch':
+            obs_tensor = torch.from_numpy(self.obs).unsqueeze(0)
+            # pass through policy
+            self.action = self.policy(obs_tensor).detach().numpy().squeeze()
+
+        else:
+            self.action = self.policy(self.obs)
+        
         
         # transform action to target_dof_pos
         target_dof_pos = self.config.default_angles + self.action * self.config.action_scale
@@ -234,7 +234,9 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     # Load config
-    config_path = f"{LEGGED_GYM_ROOT_DIR}/deploy/deploy_real/configs/{args.config}"
+    
+    cur_dir = os.path.dirname(__file__)
+    config_path = f"{cur_dir}/configs/{args.config}"
     config = Config(config_path)
 
     # Initialize DDS communication

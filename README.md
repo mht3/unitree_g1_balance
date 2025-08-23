@@ -51,13 +51,36 @@ python -m ipykernel install --user --name g1_balance --display-name "Python (g1_
 ```
 
 
-### Mujoco
+### MuJoCo
 
 
 To test that mujoco was correctly installed, try loading the Unitree G1 XML scene. A MuJoCo GUI should pop up.
 ```bash
-python -m mujoco.viewer --mjcf=environments/g1/unitree_robots/g1/scene_23dof.xml 
+python -m mujoco.viewer --mjcf=environments/unitree_robots/g1/scene_23dof.xml 
 ```
 
 <img width="1275" height="756" alt="image" src="https://github.com/user-attachments/assets/1135f7b5-a2d5-4fbe-b352-81af07aeff72" />
 
+## Real World Deployment
+
+
+### Unitree Python SDK
+
+Install `unitree_sdk2_python` as a package inside the `g11_balance` environment.
+
+Initialize and update the `unitree_sdk2_python` submodule.
+
+```bash
+git submodule init
+git submodule update
+```
+
+Set up the Unitree Python SDK environment. Assuming you have already cloned cyclonedds into the home directory:
+
+```bash
+cd unitree_sdk2_python
+export CYCLONEDDS_HOME="~/cyclonedds/install"
+pip3 install -e .
+```
+
+Refer to the unitree_sdk2_python README if you encounter any errors or have not installed cyclonedds.
