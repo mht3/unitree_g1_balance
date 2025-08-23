@@ -169,7 +169,7 @@ class G1BalanceEnv(MujocoEnv, utils.EzPickle):
     ## Rewards
     The reward function includes the following components:
     
-    - *Survival reward:* +1.0 for staying alive
+    - *Terminate penalty:* -250 for losing balance
     - *Position penalty:* Penalty for deviating from reference pelvis position
     - *Orientation cost:* Penalty for non-upright orientation
     - *Joint velocity cost:* Penalty for high joint velocities
@@ -314,13 +314,11 @@ class G1BalanceEnv(MujocoEnv, utils.EzPickle):
 
     @property
     def is_healthy(self):
-        above_min_height = (self._healthy_z_min < self.data.qpos[2])
         quat = self.data.qpos[3:7]
         r, p, _ = quat_to_euler(quat)
         within_pitch = abs(p) < self._healthy_rp_range
         within_roll = abs(r) < self._healthy_rp_range
-
-        is_healthy = above_min_height and within_roll and within_pitch
+        is_healthy = within_roll and within_pitch
         return is_healthy
 
     def _calculate_obs_indices(self):
@@ -417,7 +415,7 @@ class G1BalanceEnv(MujocoEnv, utils.EzPickle):
         
         return np.concatenate(obs_components)
 
-    def _get_reward(self, observation, action):
+    def _get_reward(self, observation, action, terminated=False):
         quad_ctrl_cost = -self._ctrl_cost_weight * np.square(action).sum()
         
         # smoothness penalty on actions
@@ -444,10 +442,14 @@ class G1BalanceEnv(MujocoEnv, utils.EzPickle):
         distance = np.sqrt(np.sum((pelvis_pos - pelvis_reference)**2))
         position_penalty = - self._position_weight * distance
 
-        survival_reward = 1.0
+        if terminated:
+            termination_penalty = -250.0
+        else:
+            termination_penalty = 0.
+        
 
         # print(position_penalty, orientation_cost, joint_vel_cost, quad_ctrl_cost)
-        return survival_reward + position_penalty + orientation_cost + joint_vel_cost + quad_ctrl_cost + action_rate_cost
+        return termination_penalty + position_penalty + orientation_cost + joint_vel_cost + quad_ctrl_cost + action_rate_cost
 
     def step(self, action):
         if self._normalized_actions:
@@ -465,8 +467,8 @@ class G1BalanceEnv(MujocoEnv, utils.EzPickle):
         self.do_simulation(clipped_action, self.frame_skip)
         # get updated obs
         observation = self._get_obs()
-        reward = self._get_reward(observation, clipped_action)
         terminated = not self.is_healthy
+        reward = self._get_reward(observation, clipped_action, terminated)
         info = {}
         
         # Store current action as previous action for next step

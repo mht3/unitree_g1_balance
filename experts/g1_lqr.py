@@ -33,9 +33,9 @@ class G1LQR(LQRPolicy):
         P = linalg.solve_discrete_are(A, B, Q, R)
         K = linalg.inv(R + B.T @ P @ B) @ B.T @ P @ A
         # remove root position and velocity indices (12 elements)
-        # K_filtered = K[:, 6:29]
-        # K_filtered = np.concatenate([K_filtered, K[:, 35:58]], axis=1)
-        return K #K_filtered
+        K_filtered = K[:, 6:29]
+        K_filtered = np.concatenate([K_filtered, K[:, 35:58]], axis=1)
+        return K_filtered
 
     def define_state_space_matrices(self):
         '''
@@ -173,7 +173,7 @@ class G1LQR(LQRPolicy):
         dq = np.zeros(self.model.nv)
         mujoco.mj_differentiatePos(self.model, dq, 1, self.qpos0, qpos)
         
-        dx = np.concatenate([dq, qvel])
+        dx = np.concatenate([dq[6:], qvel[6:]])
 
         # LQR control law: u = ctrl0 - Kx
         du = - self.K @ dx
