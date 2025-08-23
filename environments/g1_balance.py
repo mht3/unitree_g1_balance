@@ -186,7 +186,7 @@ class G1BalanceEnv(MujocoEnv, utils.EzPickle):
     ## Arguments
     | Parameter                                    | Type      | Default          | Description                                                                                                                                                               |
     | -------------------------------------------- | --------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-    | `frame_skip`                                 | **int**   | `5`              | how many MuJoCo physics steps happen between each gym environment step. By default, step() runs at 100 hz, so MuJoCo internally updates at 500 hz.                        |
+    | `frame_skip`                                 | **int**   | `10`              | how many MuJoCo physics steps happen between each gym environment step. By default, step() runs at 50 hz, so MuJoCo internally updates at 500 hz.                        |
     | `normalized_actions`                           | **bool**  | `True`           | If true, normalize actions to [-1, 1] range for better RL training stability                                                                                              |
     | `reset_noise_scale`                          | **float** | `1e-2`           | Scale of random perturbations of initial position and velocity (see section on Starting State)                                                                            |
     """
@@ -202,7 +202,7 @@ class G1BalanceEnv(MujocoEnv, utils.EzPickle):
 
     def __init__(
         self,
-        frame_skip=5,
+        frame_skip=10,
         default_camera_config=DEFAULT_CAMERA_CONFIG,
         reset_noise_scale=1e-2,
         normalized_actions=True,
