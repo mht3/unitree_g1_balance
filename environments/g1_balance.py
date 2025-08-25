@@ -33,6 +33,29 @@ def get_gravity_orientation(quaternion):
 
     return gravity_orientation
 
+def cosine_similarity_angles(angles, target_angles=None):
+    """
+    Compute cosine similarity for angles, where small angles give higher rewards.
+    
+    Args:
+        angles: Array of angles in radians
+        target_angles: Target angles (defaults to zeros)
+    
+    Returns:
+        Array of cosine similarities, where 1 = perfect alignment, -1 = opposite
+    """
+    if target_angles is None:
+        target_angles = np.zeros_like(angles)
+    
+    # Convert angles to unit vectors on the unit circle
+    angle_vectors = np.column_stack([np.cos(angles), np.sin(angles)])
+    target_vectors = np.column_stack([np.cos(target_angles), np.sin(target_angles)])
+    
+    # Compute cosine similarity
+    similarities = np.sum(angle_vectors * target_vectors, axis=1)
+    
+    return similarities
+
 DEFAULT_CAMERA_CONFIG = {
     "trackbodyid": 1,
     "distance":2.5,
@@ -85,70 +108,79 @@ class G1BalanceEnv(MujocoEnv, utils.EzPickle):
 
     The observation space consists of the following parts (in order):
 
+    - *base_quaternion (4 elements):* The quaternion representation of the robot's base orientation.
+    - *base_orientation (3 elements):* The Euler angles (roll, pitch, yaw) of the robot's base orientation.
+    - *projected_gravity (3 elements):* Gravity vector projected in the robot's base frame.
     - *angular_velocity (3 elements):* The angular velocity of the robot's base (pelvis).
-    - *projected_gravity (3 elements):* Gravity vector projected in the robot's base frame (always present).
     - *joint_pos (23 elements):* The relative joint positions (deviation from default standing pose).
     - *joint_vel (23 elements):* The joint velocities.
     - *previous_actions (23 elements, optional):* Previous action values for action continuity (included if `include_previous_actions=True`).
 
     The observation space size depends on the flags:
-    - Base: 52 elements (angular_velocity + projected_gravity + joint_pos + joint_vel)
-    - With previous actions: 75 elements (52 + 23)
+    - Base: 59 elements (base_quaternion + base_orientation + projected_gravity + angular_velocity + joint_pos + joint_vel)
+    - With previous actions: 82 elements (59 + 23)
 
     | Num | Observation                                                                                                     | Min  | Max | Name (in corresponding XML file) | Joint | Type (Unit)                |
     | --- | --------------------------------------------------------------------------------------------------------------- | ---- | --- | -------------------------------- | ----- | -------------------------- |
-    | 0   | x-coordinate angular velocity of the pelvis (center)                                                             | -Inf | Inf | floating_base_joint              | free  | angular velocity (rad/s)   |
-    | 1   | y-coordinate angular velocity of the pelvis (center)                                                             | -Inf | Inf | floating_base_joint              | free  | angular velocity (rad/s)   |
-    | 2   | z-coordinate angular velocity of the pelvis (center)                                                             | -Inf | Inf | floating_base_joint              | free  | angular velocity (rad/s)   |
-    | 3   | x-component of projected gravity                                                                                   | -Inf | Inf | -                              | -     | unit vector                |
-    | 4   | y-component of projected gravity                                                                                   | -Inf | Inf | -                              | -     | unit vector                |
-    | 5   | z-component of projected gravity                                                                                   | -Inf | Inf | -                              | -     | unit vector                |
-    | 6   | angle of the left hip pitch joint                                                                                | -Inf | Inf | left_hip_pitch_joint             | hinge | angle (rad)                |
-    | 7   | angle of the left hip roll joint                                                                                 | -Inf | Inf | left_hip_roll_joint              | hinge | angle (rad)                |
-    | 8   | angle of the left hip yaw joint                                                                                  | -Inf | Inf | left_hip_yaw_joint               | hinge | angle (rad)                |
-    | 9   | angle of the left knee joint                                                                                     | -Inf | Inf | left_knee_joint                  | hinge | angle (rad)                |
-    | 10  | angle of the left ankle pitch joint                                                                              | -Inf | Inf | left_ankle_pitch_joint           | hinge | angle (rad)                |
-    | 11  | angle of the left ankle roll joint                                                                               | -Inf | Inf | left_ankle_roll_joint            | hinge | angle (rad)                |
-    | 12  | angle of the right hip pitch joint                                                                               | -Inf | Inf | right_hip_pitch_joint            | hinge | angle (rad)                |
-    | 13  | angle of the right hip roll joint                                                                                | -Inf | Inf | right_hip_roll_joint             | hinge | angle (rad)                |
-    | 14  | angle of the right hip yaw joint                                                                                 | -Inf | Inf | right_hip_yaw_joint              | hinge | angle (rad)                |
-    | 15  | angle of the right knee joint                                                                                    | -Inf | Inf | right_knee_joint                 | hinge | angle (rad)                |
-    | 16  | angle of the right ankle pitch joint                                                                             | -Inf | Inf | right_ankle_pitch_joint          | hinge | angle (rad)                |
-    | 17  | angle of the right ankle roll joint                                                                              | -Inf | Inf | right_ankle_roll_joint           | hinge | angle (rad)                |
-    | 18  | angle of the waist yaw joint                                                                                     | -Inf | Inf | waist_yaw_joint                  | hinge | angle (rad)                |
-    | 19  | angle of the left shoulder pitch joint                                                                            | -Inf | Inf | left_shoulder_pitch_joint        | hinge | angle (rad)                |
-    | 20  | angle of the left shoulder roll joint                                                                             | -Inf | Inf | left_shoulder_roll_joint         | hinge | angle (rad)                |
-    | 21  | angle of the left shoulder yaw joint                                                                              | -Inf | Inf | left_shoulder_yaw_joint          | hinge | angle (rad)                |
-    | 22  | angle of the left elbow joint                                                                                     | -Inf | Inf | left_elbow_joint                 | hinge | angle (rad)                |
-    | 23  | angle of the left wrist roll joint                                                                                | -Inf | Inf | left_wrist_roll_joint            | hinge | angle (rad)                |
-    | 24  | angle of the right shoulder pitch joint                                                                           | -Inf | Inf | right_shoulder_pitch_joint       | hinge | angle (rad)                |
-    | 25  | angle of the right shoulder roll joint                                                                            | -Inf | Inf | right_shoulder_roll_joint        | hinge | angle (rad)                |
-    | 26  | angle of the right shoulder yaw joint                                                                             | -Inf | Inf | right_shoulder_yaw_joint         | hinge | angle (rad)                |
-    | 27  | angle of the right elbow joint                                                                                    | -Inf | Inf | right_elbow_joint                | hinge | angle (rad)                |
-    | 28  | angle of the right wrist roll joint                                                                               | -Inf | Inf | right_wrist_roll_joint           | hinge | angle (rad)                |
-    | 29  | angular velocity of the left hip pitch joint                                                                     | -Inf | Inf | left_hip_pitch_joint             | hinge | angular velocity (rad/s)   |
-    | 30  | angular velocity of the left hip roll joint                                                                      | -Inf | Inf | left_hip_roll_joint              | hinge | angular velocity (rad/s)   |
-    | 31  | angular velocity of the left hip yaw joint                                                                       | -Inf | Inf | left_hip_yaw_joint               | hinge | angular velocity (rad/s)   |
-    | 32  | angular velocity of the left knee joint                                                                          | -Inf | Inf | left_knee_joint                  | hinge | angular velocity (rad/s)   |
-    | 33  | angular velocity of the left ankle pitch joint                                                                   | -Inf | Inf | left_ankle_pitch_joint           | hinge | angular velocity (rad/s)   |
-    | 34  | angular velocity of the left ankle roll joint                                                                    | -Inf | Inf | left_ankle_roll_joint            | hinge | angular velocity (rad/s)   |
-    | 35  | angular velocity of the right hip pitch joint                                                                    | -Inf | Inf | right_hip_pitch_joint            | hinge | angular velocity (rad/s)   |
-    | 36  | angular velocity of the right hip roll joint                                                                     | -Inf | Inf | right_hip_roll_joint             | hinge | angular velocity (rad/s)   |
-    | 37  | angular velocity of the right hip yaw joint                                                                      | -Inf | Inf | right_hip_yaw_joint              | hinge | angular velocity (rad/s)   |
-    | 38  | angular velocity of the right knee joint                                                                         | -Inf | Inf | right_knee_joint                 | hinge | angular velocity (rad/s)   |
-    | 39  | angular velocity of the right ankle pitch joint                                                                  | -Inf | Inf | right_ankle_pitch_joint          | hinge | angular velocity (rad/s)   |
-    | 40  | angular velocity of the right ankle roll joint                                                                   | -Inf | Inf | right_ankle_roll_joint           | hinge | angular velocity (rad/s)   |
-    | 41  | angular velocity of the waist yaw joint                                                                          | -Inf | Inf | waist_yaw_joint                  | hinge | angular velocity (rad/s)   |
-    | 42  | angular velocity of the left shoulder pitch joint                                                                 | -Inf | Inf | left_shoulder_pitch_joint        | hinge | angular velocity (rad/s)   |
-    | 43  | angular velocity of the left shoulder roll joint                                                                  | -Inf | Inf | left_shoulder_roll_joint         | hinge | angular velocity (rad/s)   |
-    | 44  | angular velocity of the left shoulder yaw joint                                                                   | -Inf | Inf | left_shoulder_yaw_joint          | hinge | angular velocity (rad/s)   |
-    | 45  | angular velocity of the left elbow joint                                                                          | -Inf | Inf | left_elbow_joint                 | hinge | angular velocity (rad/s)   |
-    | 46  | angular velocity of the left wrist roll joint                                                                     | -Inf | Inf | left_wrist_roll_joint            | hinge | angular velocity (rad/s)   |
-    | 47  | angular velocity of the right shoulder pitch joint                                                                | -Inf | Inf | right_shoulder_pitch_joint       | hinge | angular velocity (rad/s)   |
-    | 48  | angular velocity of the right shoulder roll joint                                                                 | -Inf | Inf | right_shoulder_roll_joint        | hinge | angular velocity (rad/s)   |
-    | 49  | angular velocity of the right shoulder yaw joint                                                                  | -Inf | Inf | right_shoulder_yaw_joint         | hinge | angular velocity (rad/s)   |
-    | 50  | angular velocity of the right elbow joint                                                                         | -Inf | Inf | right_elbow_joint                | hinge | angular velocity (rad/s)   |
-    | 51  | angular velocity of the right wrist roll joint                                                                    | -Inf | Inf | right_wrist_roll_joint           | hinge | angular velocity (rad/s)   |
+    | 0   | w-component of base quaternion                                                                                    | -Inf | Inf | floating_base_joint              | free  | quaternion                  |
+    | 1   | x-component of base quaternion                                                                                    | -Inf | Inf | floating_base_joint              | free  | quaternion                  |
+    | 2   | y-component of base quaternion                                                                                    | -Inf | Inf | floating_base_joint              | free  | quaternion                  |
+    | 3   | z-component of base quaternion                                                                                    | -Inf | Inf | floating_base_joint              | free  | quaternion                  |
+    | 4   | roll angle of the base (pelvis)                                                                                   | -Inf | Inf | floating_base_joint              | free  | angle (rad)                |
+    | 5   | pitch angle of the base (pelvis)                                                                                  | -Inf | Inf | floating_base_joint              | free  | angle (rad)                |
+    | 6   | yaw angle of the base (pelvis)                                                                                    | -Inf | Inf | floating_base_joint              | free  | angle (rad)                |
+    | 7   | x-component of projected gravity                                                                                   | -Inf | Inf | -                              | -     | unit vector                |
+    | 8   | y-component of projected gravity                                                                                   | -Inf | Inf | -                              | -     | unit vector                |
+    | 9   | z-component of projected gravity                                                                                   | -Inf | Inf | -                              | -     | unit vector                |
+    | 10  | x-coordinate angular velocity of the pelvis (center)                                                             | -Inf | Inf | floating_base_joint              | free  | angular velocity (rad/s)   |
+    | 11  | y-coordinate angular velocity of the pelvis (center)                                                             | -Inf | Inf | floating_base_joint              | free  | angular velocity (rad/s)   |
+    | 12  | z-coordinate angular velocity of the pelvis (center)                                                             | -Inf | Inf | floating_base_joint              | free  | angular velocity (rad/s)   |
+    | 13  | angle of the left hip pitch joint                                                                                | -Inf | Inf | left_hip_pitch_joint             | hinge | angle (rad)                |
+    | 14  | angle of the left hip roll joint                                                                                 | -Inf | Inf | left_hip_roll_joint              | hinge | angle (rad)                |
+    | 15  | angle of the left hip yaw joint                                                                                  | -Inf | Inf | left_hip_yaw_joint               | hinge | angle (rad)                |
+    | 16  | angle of the left knee joint                                                                                     | -Inf | Inf | left_knee_joint                  | hinge | angle (rad)                |
+    | 17  | angle of the left ankle pitch joint                                                                              | -Inf | Inf | left_ankle_pitch_joint           | hinge | angle (rad)                |
+    | 18  | angle of the left ankle roll joint                                                                               | -Inf | Inf | left_ankle_roll_joint            | hinge | angle (rad)                |
+    | 19  | angle of the right hip pitch joint                                                                               | -Inf | Inf | right_hip_pitch_joint            | hinge | angle (rad)                |
+    | 20  | angle of the right hip roll joint                                                                                | -Inf | Inf | right_hip_roll_joint             | hinge | angle (rad)                |
+    | 21  | angle of the right hip yaw joint                                                                                 | -Inf | Inf | right_hip_yaw_joint              | hinge | angle (rad)                |
+    | 22  | angle of the right knee joint                                                                                    | -Inf | Inf | right_knee_joint                 | hinge | angle (rad)                |
+    | 23  | angle of the right ankle pitch joint                                                                             | -Inf | Inf | right_ankle_pitch_joint          | hinge | angle (rad)                |
+    | 24  | angle of the right ankle roll joint                                                                              | -Inf | Inf | right_ankle_roll_joint           | hinge | angle (rad)                |
+    | 25  | angle of the waist yaw joint                                                                                     | -Inf | Inf | waist_yaw_joint                  | hinge | angle (rad)                |
+    | 26  | angle of the left shoulder pitch joint                                                                            | -Inf | Inf | left_shoulder_pitch_joint        | hinge | angle (rad)                |
+    | 27  | angle of the left shoulder roll joint                                                                             | -Inf | Inf | left_shoulder_roll_joint         | hinge | angle (rad)                |
+    | 28  | angle of the left shoulder yaw joint                                                                              | -Inf | Inf | left_shoulder_yaw_joint          | hinge | angle (rad)                |
+    | 29  | angle of the left elbow joint                                                                                     | -Inf | Inf | left_elbow_joint                 | hinge | angle (rad)                |
+    | 30  | angle of the left wrist roll joint                                                                                | -Inf | Inf | left_wrist_roll_joint            | hinge | angle (rad)                |
+    | 31  | angle of the right shoulder pitch joint                                                                           | -Inf | Inf | right_shoulder_pitch_joint       | hinge | angle (rad)                |
+    | 32  | angle of the right shoulder roll joint                                                                            | -Inf | Inf | right_shoulder_roll_joint        | hinge | angle (rad)                |
+    | 33  | angle of the right shoulder yaw joint                                                                             | -Inf | Inf | right_shoulder_yaw_joint         | hinge | angle (rad)                |
+    | 34  | angle of the right elbow joint                                                                                    | -Inf | Inf | right_elbow_joint                | hinge | angle (rad)                |
+    | 35  | angle of the right wrist roll joint                                                                               | -Inf | Inf | right_wrist_roll_joint           | hinge | angle (rad)                |
+    | 36  | angular velocity of the left hip pitch joint                                                                     | -Inf | Inf | left_hip_pitch_joint             | hinge | angular velocity (rad/s)   |
+    | 37  | angular velocity of the left hip roll joint                                                                      | -Inf | Inf | left_hip_roll_joint              | hinge | angular velocity (rad/s)   |
+    | 38  | angular velocity of the left hip yaw joint                                                                       | -Inf | Inf | left_hip_yaw_joint               | hinge | angular velocity (rad/s)   |
+    | 39  | angular velocity of the left knee joint                                                                          | -Inf | Inf | left_knee_joint                  | hinge | angular velocity (rad/s)   |
+    | 40  | angular velocity of the left ankle pitch joint                                                                   | -Inf | Inf | left_ankle_pitch_joint           | hinge | angular velocity (rad/s)   |
+    | 41  | angular velocity of the left ankle roll joint                                                                    | -Inf | Inf | left_ankle_roll_joint            | hinge | angular velocity (rad/s)   |
+    | 42  | angular velocity of the right hip pitch joint                                                                    | -Inf | Inf | right_hip_pitch_joint            | hinge | angular velocity (rad/s)   |
+    | 43  | angular velocity of the right hip roll joint                                                                     | -Inf | Inf | right_hip_roll_joint             | hinge | angular velocity (rad/s)   |
+    | 44  | angular velocity of the right hip yaw joint                                                                      | -Inf | Inf | right_hip_yaw_joint              | hinge | angular velocity (rad/s)   |
+    | 45  | angular velocity of the right knee joint                                                                         | -Inf | Inf | right_knee_joint                 | hinge | angular velocity (rad/s)   |
+    | 46  | angular velocity of the right ankle pitch joint                                                                  | -Inf | Inf | right_ankle_pitch_joint          | hinge | angular velocity (rad/s)   |
+    | 47  | angular velocity of the right ankle roll joint                                                                   | -Inf | Inf | right_ankle_roll_joint           | hinge | angular velocity (rad/s)   |
+    | 48  | angular velocity of the waist yaw joint                                                                          | -Inf | Inf | waist_yaw_joint                  | hinge | angular velocity (rad/s)   |
+    | 49  | angular velocity of the left shoulder pitch joint                                                                 | -Inf | Inf | left_shoulder_pitch_joint        | hinge | angular velocity (rad/s)   |
+    | 50  | angular velocity of the left shoulder roll joint                                                                  | -Inf | Inf | left_shoulder_roll_joint         | hinge | angular velocity (rad/s)   |
+    | 51  | angular velocity of the left shoulder yaw joint                                                                   | -Inf | Inf | left_shoulder_yaw_joint          | hinge | angular velocity (rad/s)   |
+    | 52  | angular velocity of the left elbow joint                                                                          | -Inf | Inf | left_elbow_joint                 | hinge | angular velocity (rad/s)   |
+    | 53  | angular velocity of the left wrist roll joint                                                                     | -Inf | Inf | left_wrist_roll_joint            | hinge | angular velocity (rad/s)   |
+    | 54  | angular velocity of the right shoulder pitch joint                                                                | -Inf | Inf | right_shoulder_pitch_joint       | hinge | angular velocity (rad/s)   |
+    | 55  | angular velocity of the right shoulder roll joint                                                                 | -Inf | Inf | right_shoulder_roll_joint        | hinge | angular velocity (rad/s)   |
+    | 56  | angular velocity of the right shoulder yaw joint                                                                  | -Inf | Inf | right_shoulder_yaw_joint         | hinge | angular velocity (rad/s)   |
+    | 57  | angular velocity of the right elbow joint                                                                         | -Inf | Inf | right_elbow_joint                | hinge | angular velocity (rad/s)   |
+    | 58  | angular velocity of the right wrist roll joint                                                                    | -Inf | Inf | right_wrist_roll_joint           | hinge | angular velocity (rad/s)   |
 
     The (x,y,z) coordinates are translational DOFs, while the orientations are rotational DOFs expressed as quaternions.
     One can read more about free joints in the [MuJoCo documentation](https://mujoco.readthedocs.io/en/latest/XMLreference.html).
@@ -157,8 +189,8 @@ class G1BalanceEnv(MujocoEnv, utils.EzPickle):
     The reward function includes the following components:
     
     - *Terminate penalty:* -250 for losing balance
-    - *Position penalty:* Penalty for deviating from reference pelvis position
-    - *Orientation cost:* Penalty for non-upright orientation
+    - *Orientation cost:* Penalty for non-upright orientation (using projected gravity)
+    - *Joint position cost:* Penalty for deviating from reference joint positions using cosine similarity
     - *Joint velocity cost:* Penalty for high joint velocities
     - *Control cost:* Penalty for large control inputs
     - *Action rate cost:* Penalty for large changes between consecutive actions (smoothness)
@@ -209,8 +241,7 @@ class G1BalanceEnv(MujocoEnv, utils.EzPickle):
         )
         # healthy roll and pitch range
         # roll and pitch can't exceed 78.75 degrees
-        self._healthy_rp_range = 7 * np.pi / 16
-        self._healthy_shoulder_height = 0.8 # stay above shoulder height
+        self._healthy_rp_range = np.pi / 4 #7 * np.pi / 16
         self._reset_noise_scale = reset_noise_scale
 
         self._position_weight = np.ones(23)
@@ -223,13 +254,13 @@ class G1BalanceEnv(MujocoEnv, utils.EzPickle):
         arm_indices = [13, 14, 15, 16, 17, 18, 19, 20, 21, 22]
 
         # reward weighting
-        self._orientation_weight = 2e3
+        self._orientation_weight = 1.0
         self._ctrl_cost_weight = 0 #1e-4
-        self._position_weight[leg_indices] = 0 #5.0
-        self._position_weight[waist_index] = 0 #3.0
-        self._position_weight[arm_indices] = 0 #1.0
-        self._joint_vel_weight = 0 #1e-4
-        self._angular_vel_weight = 0 #1e-4
+        self._position_weight[leg_indices] = 1e-2 #5.0
+        self._position_weight[waist_index] = 1e-2 #3.0
+        self._position_weight[arm_indices] = 1e-2 #1.0
+        self._joint_vel_weight = 1e-4
+        self._angular_vel_weight = 1e-4
         self._action_smoothness_weight = 0 #1e-4
 
         self._include_previous_actions = include_previous_actions
@@ -271,8 +302,7 @@ class G1BalanceEnv(MujocoEnv, utils.EzPickle):
         self._obs_indices = self._calculate_obs_indices()
         
         # Calculate observation space size
-        # angular_velocity (3) + projected_gravity (3) + joint_pos (23) + joint_vel (23) + optional previous_actions (23)
-
+        # base_quat (4) + base_orientation (3) + projected_gravity (3) + angular_velocity (3) + joint_pos (23) + joint_vel (23) + optional previous_actions (23)
 
         quat_size = 4
         orientation_size = 3
@@ -380,7 +410,6 @@ class G1BalanceEnv(MujocoEnv, utils.EzPickle):
         # Relative joint positions
         relative_joint_pos = joint_pos - self._default_joint_pos
         
-        # Include previous actions if flag is enabled
         if self._include_previous_actions:
             if self._previous_action is not None:
                 previous_actions = self._previous_action
@@ -418,19 +447,23 @@ class G1BalanceEnv(MujocoEnv, utils.EzPickle):
         angular_vel = observation[self._obs_indices['angular_vel_start']:self._obs_indices['angular_vel_end']]
         angular_vel_cost = -self._angular_vel_weight * np.square(angular_vel).sum()
 
-        # Joint position cost (position is already relative to target).
-        # TODO weight ankles lower than upper body?
+        # Joint position cost using cosine similarity
         relative_joint_positions = observation[self._obs_indices['joint_pos_start']:self._obs_indices['joint_pos_end']]
-        joint_pos_cost = -np.sum(self._position_weight * np.square(relative_joint_positions))
+        # joint_pos_cost = -np.sum(self._position_weight * np.square(relative_joint_positions))
+        
+        # Compute cosine similarities (1 = perfect alignment, -1 = opposite)
+        joint_cosine_similarities = cosine_similarity_angles(relative_joint_positions)
+        
+        joint_pos_cost = -np.sum(self._position_weight * (1 - joint_cosine_similarities))
+        # joint_pos_cost = -np.sum(self._position_weight * np.square(relative_joint_positions))
 
         # joint velocity cost (target velocity is 0)
         joint_velocities = observation[self._obs_indices['joint_vel_start']:self._obs_indices['joint_vel_end']]
         joint_vel_cost = -self._joint_vel_weight * np.square(joint_velocities).sum()  
 
-        if terminated:
-            termination_penalty = -250.0
-        else:
-            termination_penalty = 0.
+        survival_reward = 0
+        if not terminated:
+            survival_reward = 1.0
         
         # print("#####")
         # print("Orientation Cost:", orientation_cost)
@@ -440,8 +473,15 @@ class G1BalanceEnv(MujocoEnv, utils.EzPickle):
         # print("Joint Velocity Cost:", joint_vel_cost)
         # print("Control Cost:", quad_ctrl_cost)
         # print("Action Smoothness Cost:", action_smoothness_cost)
-        # print("Termination Penalty:", termination_penalty)
-        return termination_penalty + orientation_cost + angular_vel_cost + joint_pos_cost + joint_vel_cost + quad_ctrl_cost + action_smoothness_cost
+        return survival_reward + orientation_cost + angular_vel_cost + joint_pos_cost + joint_vel_cost + quad_ctrl_cost + action_smoothness_cost
+
+    def set_controller(self, controller):
+        '''
+        Sets an external controller. Useful if the controller contains an observer that has a state estimate.
+        Assumes the controller has a reset() function, otherwise an error will be thrown.
+        The reset function must take in a parameter for the observation/noisy measurements to initialize the state estimate.
+        '''
+        self.external_controller = controller
 
     def step(self, action):
         if self._normalized_actions:
@@ -508,9 +548,21 @@ class G1BalanceEnv(MujocoEnv, utils.EzPickle):
         qvel = self.data.qvel
         self.set_state(qpos, qvel)
 
+
         self._previous_action = None
 
         observation = self._get_obs()
+
+        # optionally reset the controller (useful when observer has state estimate)
+        if self.external_controller is not None:
+            # TODO add gaussian noise to sensors in observation? Match noise from lqg
+            base_quat_meas = observation[self._obs_indices['quat_start']:self._obs_indices['quat_end']]
+            base_angular_velocity_meas = observation[self._obs_indices['angular_vel_start']:self._obs_indices['angular_vel_end']]
+            joint_pos_meas = observation[self._obs_indices['joint_pos_start']:self._obs_indices['joint_pos_end']] + self._default_joint_pos
+            joint_vel_meas = observation[self._obs_indices['joint_vel_start']:self._obs_indices['joint_vel_end']]
+            measurements = np.concatenate([joint_pos_meas, joint_vel_meas, base_quat_meas, base_angular_velocity_meas])
+            self.external_controller.reset(measurements)
+
         return observation
 
 

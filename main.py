@@ -27,7 +27,7 @@ def parse_args():
     parser.add_argument('--env_id', type=str, default='G1Balance-v0', help='Gym environment name.')
     parser.add_argument('--test', action='store_true', help='Flag for loading a model and testing on a specific environment. Otherwise training is set to True.')
     parser.add_argument("--algorithm", choices=['PPO', 'SAC'], help='Model to use. Each algorithm requires additional arguments. See `algorithms/` for more info.', required=True)
-    parser.add_argument("--expert", choices=[None, 'G1LQR'], help='Expert to use. See `experts/` for more info.', default=None)
+    parser.add_argument("--expert", choices=[None, 'G1LQG'], help='Expert to use. See `experts/` for more info.', default=None)
     parser.add_argument("--seed", help='random seed to use.', type=int, default=42)
     parser.add_argument('--render', action='store_true', help='Flag for rendering the environment.')
     parser.add_argument('--debug', action='store_true', help='Flag for debugging the training process. Turns wandb logging off.')

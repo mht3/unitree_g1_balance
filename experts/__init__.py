@@ -1,1 +1,1 @@
-from .g1_lqr import G1LQR
+from .g1_lqg import G1LQG
