@@ -4,8 +4,9 @@ import numpy as np
 from scipy import linalg
 from .lqr import LQRPolicy
 from stable_baselines3.common.policies import ActorCriticPolicy
+from scipy.spatial.transform import Rotation
 
-class G1LQG(LQRPolicy):
+class G1LQR(LQRPolicy):
     '''
     LQR For Unitree G1 2-Leg Balance Environment.
     '''
@@ -15,16 +16,13 @@ class G1LQG(LQRPolicy):
         self.data = self.env.data
         # number of DoFs
         self.nv = self.model.nv
-        self.ns = self.model.nsensordata
         # number of actuators (23)
         self.nu = self.model.nu 
-        # very important this matches the simulation dt
         self.dt = 0.02
-        self.A, self.B, self.C, self.D = self.define_state_space_matrices()
-        self.Q, self.R, self.Qo, self.Ro = self.define_cost_matrices()
-        self.K = G1LQG.lqr(self.A, self.B, self.Q, self.R)
+        self.A, self.B = self.define_state_space_matrices()
+        self.Q, self.R = self.define_cost_matrices()
+        self.K = G1LQR.lqr(self.A, self.B, self.Q, self.R)
 
-        self.L = G1LQG.lqr_obsv(self.A, self.C, self.Qo, self.Ro)
         self.observation_space = self.env.observation_space
         self.action_space = self.env.action_space
         lr_schedule = lambda _: 0.
@@ -32,6 +30,7 @@ class G1LQG(LQRPolicy):
 
         # sanity checks
         self.checkControllable(self.A, self.B)
+
         self.env.unwrapped.set_controller(self)
 
     @staticmethod
@@ -42,42 +41,6 @@ class G1LQG(LQRPolicy):
         P = linalg.solve_discrete_are(A, B, Q, R)
         K = linalg.inv(R + B.T @ P @ B) @ B.T @ P @ A
         return K
-
-    @staticmethod
-    def lqr_obsv(A, C, Q, R):
-        '''
-        Get the injection matrix L
-        '''
-        P = linalg.solve_discrete_are(A.T, C.T, Q, R)
-        L = P @ C.T @ np.linalg.inv(R + C @ P @ C.T)
-        return L
-
-    def reset(self, measurement):
-        '''
-        Resets estimation of current state (only used for observer model).
-        Measurement (53, ): base_quat, base_angular_velocity, joint_pos, joint_vel
-        '''  
-        base_quat = measurement[:4]
-        base_angular_velocity = measurement[4:7]
-        joint_pos = measurement[7:30]
-        joint_vel = measurement[30:53]
-
-        self.xhat = np.zeros(58)
-        
-        # Assume base position is at reference position on reset
-        base_pos_ref = self.qpos0[:3]
-        qpos_measured = np.concatenate([base_pos_ref, base_quat, joint_pos])
-        
-        # Compute deviation from reference (3-axis quaternion deviation + joint deviations)
-        dq = np.zeros(self.model.nv)
-        mujoco.mj_differentiatePos(self.model, dq, 1, self.qpos0, qpos_measured)
-        
-        # Set position deviations (first 29 elements: 3 quaternion deviation + 23 joint deviations)
-        self.xhat[:29] = dq
-        
-        self.xhat[29:32] = 0  # base linear velocity deviation (assuming reference is 0, not measured)
-        self.xhat[32:35] = base_angular_velocity  # angular velocity deviation (assuming reference is 0)
-        self.xhat[35:58] = joint_vel  # joint velocity deviation (assuming reference is 0)
 
     def define_state_space_matrices(self):
         '''
@@ -119,47 +82,13 @@ class G1LQG(LQRPolicy):
         # Allocate the A and B matrices, compute them.
         A = np.zeros((2*self.nv, 2*self.nv))
         B = np.zeros((2*self.nv, self.nu))
-        C = np.zeros((self.ns, 2*self.nv))
-        D = np.zeros((self.ns, self.nu))
+
         epsilon = 1e-6
         flg_centered = True
         # uses finite difference to get state space model.
-        mujoco.mjd_transitionFD(self.model, self.data, epsilon, flg_centered, A, B, C, D)
+        mujoco.mjd_transitionFD(self.model, self.data, epsilon, flg_centered, A, B, None, None)
 
-        # C and D matrices contain unrealistic sensors in XML file that the real robot doesnt have.
-        # filter out unrealistic sensors. 
-        sensor_names = []
-        sensor_idx = []
-
-        idx = 0
-        for i in range(self.model.nsensor):
-            sensor_name = mujoco.mj_id2name(self.model, mujoco.mjtObj.mjOBJ_SENSOR, i)
-            if not ('torque' in sensor_name or 'frame' in sensor_name or 'acc' in sensor_name) :
-                sensor_names.append(sensor_name)
-                if 'imu_quat' in sensor_name:
-                    # imu data has 4 elements (only works because all prev sensors are size 1)
-                    sensor_idx.append(idx)
-                    sensor_idx.append(idx + 1)
-                    sensor_idx.append(idx + 2)
-                    sensor_idx.append(idx + 3)
-                    idx += 3
-                elif 'imu_gyro' in sensor_name:
-                    # angular velocity is 3 elements
-                    sensor_idx.append(idx)
-                    sensor_idx.append(idx + 1)
-                    sensor_idx.append(idx + 2)
-                    idx += 2
-                else:
-                    sensor_idx.append(idx)
-                
-            idx += 1
-
-
-        # Filter C matrix
-        C = C[sensor_idx, :]
-        D = D[sensor_idx, :]
-
-        return A, B, C, D
+        return A, B
 
     def define_cost_matrices(self):
         '''
@@ -210,20 +139,22 @@ class G1LQG(LQRPolicy):
         Q[other_dofs, other_dofs] *= OTHER_JOINT_COST
 
 
-        num_measurements = 53
-        sigma_quat = 1e-3
-        sigma_gyro = 1e-3
-        sigma_other = 1e-5
-        # model uncertainty
-        Q_obs = 1e-5 * np.eye(2*self.nv)  
-        # measurement noise
-        R_obs = sigma_other**2 * np.eye(num_measurements)  
-        # quaternion
-        R_obs[-7:-3, -7:-3] = np.eye(4) * sigma_quat**2
-        # angular velocity measurement
-        R_obs[-3:, -3:] = np.eye(3) * sigma_gyro**2
+        return Q, R
 
-        return Q, R, Q_obs, R_obs
+    def reset(self, measurement):
+        '''
+        Resets the integration state when environment resets.
+        Measurement (53, ): base_quat, base_angular_velocity, joint_pos, joint_vel
+        # '''  
+        # base_quat = measurement[:4]
+        # base_angular_velocity = measurement[4:7]
+        # joint_pos = measurement[7:30]
+        # joint_vel = measurement[30:53]
+
+        # Reset base position and velocity for integration
+        # Assume base position is at reference position on reset
+        self.base_pos = self.qpos0[:3]
+        self.base_vel = np.zeros(3)
 
     def policy(self, observation):
         # check if batch dimension is present
@@ -234,27 +165,33 @@ class G1LQG(LQRPolicy):
             observation = observation[0]
 
 
-        # obs: [quat (4), orientation (3), angular_velocity(3), gravity_orientation(3), relative_joint_pos(23), joint_vel(23)]
-        quat = observation[:4]
-        # orientation = observation[4:7]
-        angular_velocity = observation[7:10]
-        # relative_gravity_orientation = observation[10:13] - np.array([0, 0, -1])
-        relative_joint_pos = observation[13:36] 
-        joint_vel = observation[36:59]
+        # obs: [quat (4), orientation (3), angular_velocity(3), gravity_orientation(3), base_accel, relative_joint_pos(23), joint_vel(23)]
+        base_quat = observation[3:7]
+        base_orientation = observation[7:10]
+        base_angular_velocity = observation[10:13]
+        relative_gravity_orientation = observation[10:13] - np.array([0, 0, -1])
+        base_acc = observation[13:16]
+        relative_joint_pos = observation[16:39] 
+        joint_vel = observation[39:62]
         joint_pos = relative_joint_pos + self.qpos0[7:]
 
-        # qpos = np.concatenate([quat, joint_pos])
-        # vel = np.concatenate([angular_velocity, joint_vel])
-
-        # Reorder measurement to match C matrix: [joint_pos, joint_vel, quat, angular_velocity]
-        measurement = np.concatenate([joint_pos, joint_vel, quat, angular_velocity])
-        y = measurement
-
+        # Transform acceleration from body frame to world frame
+        # base_quat is [w, x, y, z], but Rotation.from_quat expects [x, y, z, w]
+        quat_xyzw = np.array([base_quat[1], base_quat[2], base_quat[3], base_quat[0]])
+        R = Rotation.from_quat(quat_xyzw)
+        base_acc_world = R.apply(base_acc)
+        
+        # Integrate acceleration in world frame
+        self.base_vel = self.base_vel + self.dt * base_acc_world
+        self.base_pos = self.base_pos + self.dt * self.base_vel
+        
+        qpos = np.concatenate([self.base_pos, base_quat, joint_pos])
+        qvel = np.concatenate([self.base_vel, base_angular_velocity, joint_vel])
+        dq = np.zeros(self.model.nv)
+        mujoco.mj_differentiatePos(self.model, dq, 1, self.qpos0, qpos)
+        dx = np.hstack((dq, qvel)).T
         # control law 
-        u = - self.K @ self.xhat + self.ctrl0
-
-        # Observer update
-        self.xhat = self.xhat + self.dt*(self.A @ self.xhat + self.B @ (u - self.ctrl0) - self.L @ (self.C @ self.xhat - y))
+        u = - self.K @ dx + self.ctrl0
 
         if self.env._normalized_actions:
             # normalize action from -1 to 1

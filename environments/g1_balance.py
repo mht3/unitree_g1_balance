@@ -5,6 +5,7 @@ import mujoco
 from gymnasium import utils
 from gymnasium.envs.mujoco.mujoco_env import MujocoEnv
 from gymnasium.spaces import Box
+from scipy.spatial.transform import Rotation
 
 def quat_to_euler(quat):
     """
@@ -357,24 +358,27 @@ class G1BalanceEnv(MujocoEnv, utils.EzPickle):
         """Calculate the indices for different observation components."""
         indices = {}
 
-        indices['quat_start'] = 0
-        indices['quat_end'] = 4
+
+        indices['base_acc_start'] = 0
+        indices['base_acc_end'] = 3
+
+        indices['quat_start'] = indices['base_acc_end']
+        indices['quat_end'] = indices['base_acc_end'] + 4
 
         indices['orientation_start'] = indices['quat_end']
         indices['orientation_end'] = indices['quat_end'] + 3
 
-
-        # Projected gravity
-        indices['gravity_start'] = indices['orientation_end']
-        indices['gravity_end'] = indices['orientation_end'] + 3
-
         # Angular velocity
-        indices['angular_vel_start'] = indices['gravity_end']
-        indices['angular_vel_end'] = indices['gravity_end'] + 3
+        indices['angular_vel_start'] = indices['orientation_end']
+        indices['angular_vel_end'] = indices['orientation_end'] + 3
         
+        # Projected gravity
+        indices['gravity_start'] = indices['angular_vel_end']
+        indices['gravity_end'] = indices['angular_vel_end'] + 3
+
         # Joint positions
-        indices['joint_pos_start'] = indices['angular_vel_end']
-        indices['joint_pos_end'] = indices['angular_vel_end'] + 23
+        indices['joint_pos_start'] = indices['gravity_end']
+        indices['joint_pos_end'] = indices['gravity_end'] + 23
         
         # Joint velocities
         indices['joint_vel_start'] = indices['joint_pos_end']
@@ -404,8 +408,17 @@ class G1BalanceEnv(MujocoEnv, utils.EzPickle):
         angular_velocity = self.data.qvel[3:6]
 
         base_orientation = quat_to_euler(base_quat)
+
         # Projected gravity (3 elements)
         gravity_orientation = get_gravity_orientation(base_quat)
+        
+        quat_xyzw = np.array([base_quat[1], base_quat[2], base_quat[3], base_quat[0]])
+        
+        base_acc_imu = self.data.qacc[0:3]
+        R = Rotation.from_quat(quat_xyzw)
+        # acceleration in world frame
+        base_acc = R.apply(base_acc_imu)
+
         # Joint states
         joint_pos = self.data.qpos[7:] 
         joint_vel = self.data.qvel[6:] 
@@ -422,7 +435,7 @@ class G1BalanceEnv(MujocoEnv, utils.EzPickle):
             previous_actions = np.array([])
         
         # Concatenate all components in the specified order
-        obs_components = [base_quat, base_orientation, gravity_orientation, angular_velocity, relative_joint_pos, joint_vel]
+        obs_components = [base_acc, base_quat, base_orientation, angular_velocity, gravity_orientation, relative_joint_pos, joint_vel]
         if self._include_previous_actions:
             obs_components.append(previous_actions)
         
