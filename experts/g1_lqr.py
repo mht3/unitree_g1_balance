@@ -18,7 +18,7 @@ class G1LQR(LQRPolicy):
         self.nv = self.model.nv
         # number of actuators (23)
         self.nu = self.model.nu 
-        self.dt = 0.02
+        self.dt = self.env.dt
         self.A, self.B = self.define_state_space_matrices()
         self.Q, self.R = self.define_cost_matrices()
         self.K = G1LQR.lqr(self.A, self.B, self.Q, self.R)
@@ -165,26 +165,29 @@ class G1LQR(LQRPolicy):
             observation = observation[0]
 
 
-        # obs: [quat (4), orientation (3), angular_velocity(3), gravity_orientation(3), base_accel, relative_joint_pos(23), joint_vel(23)]
+        # obs: [base_acc, quat (4), orientation (3), angular_velocity(3), gravity_orientation(3),relative_joint_pos(23), joint_vel(23)]
+        base_acc = observation[:3]
         base_quat = observation[3:7]
         base_orientation = observation[7:10]
         base_angular_velocity = observation[10:13]
-        relative_gravity_orientation = observation[10:13] - np.array([0, 0, -1])
-        base_acc = observation[13:16]
+        relative_gravity_orientation = observation[13:16] - np.array([0, 0, -1])
         relative_joint_pos = observation[16:39] 
         joint_vel = observation[39:62]
         joint_pos = relative_joint_pos + self.qpos0[7:]
 
         # Transform acceleration from body frame to world frame
         # base_quat is [w, x, y, z], but Rotation.from_quat expects [x, y, z, w]
+
         quat_xyzw = np.array([base_quat[1], base_quat[2], base_quat[3], base_quat[0]])
         R = Rotation.from_quat(quat_xyzw)
         base_acc_world = R.apply(base_acc)
         
         # Integrate acceleration in world frame
         self.base_vel = self.base_vel + self.dt * base_acc_world
-        self.base_pos = self.base_pos + self.dt * self.base_vel
-        
+        self.base_pos = self.base_pos + self.dt* self.base_vel
+        # self.base_vel, self.base_pos = self.rk4_integrate(base_acc_world, self.base_vel, self.base_pos, self.dt)
+
+        # print(self.base_vel, self.data.qvel[:3])
         qpos = np.concatenate([self.base_pos, base_quat, joint_pos])
         qvel = np.concatenate([self.base_vel, base_angular_velocity, joint_vel])
         dq = np.zeros(self.model.nv)
