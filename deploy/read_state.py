@@ -40,8 +40,10 @@ class StateReader(Controller):
 
 
         # create observation
+        # imu_state quaternion: w, x, y, z
+        quat = self.low_state.imu_state.quaternion
 
-        # imu acceleration
+        # imu acceleration reads [0, 0, 9.81] at perfect rest in standing mode
         gravity_world = np.array([0., 0., -9.81], dtype=np.float32)  # Gravity in world frame
         quat_xyzw = np.array([quat[1], quat[2], quat[3], quat[0]])
         R = Rotation.from_quat(quat_xyzw)
@@ -49,8 +51,6 @@ class StateReader(Controller):
         acc_world = R.apply(acc_body)
         acc = acc_world + gravity_world
         
-        # imu_state quaternion: w, x, y, z
-        quat = self.low_state.imu_state.quaternion
         orientation = self.low_state.imu_state.rpy
         # self.low_state.imu_state
         ang_vel = np.array([self.low_state.imu_state.gyroscope], dtype=np.float32) * self.config.ang_vel_scale
