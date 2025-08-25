@@ -221,7 +221,7 @@ class G1BalanceEnv(MujocoEnv, utils.EzPickle):
 
     def __init__(
         self,
-        frame_skip=1,
+        frame_skip=5,
         default_camera_config=DEFAULT_CAMERA_CONFIG,
         normalized_actions=True,
         include_previous_actions=False,
@@ -252,7 +252,7 @@ class G1BalanceEnv(MujocoEnv, utils.EzPickle):
 
         # reward weighting
         self._orientation_weight = 10.0
-        self._ctrl_cost_weight = 0 #1e-4
+        self._ctrl_cost_weight = 1e-4
         self._position_weight[leg_indices] = 1 #5.0
         self._position_weight[waist_index] = 1e-1 #3.0
         self._position_weight[arm_indices] = 1e-2 #1.0
@@ -569,11 +569,12 @@ class G1BalanceEnv(MujocoEnv, utils.EzPickle):
         # optionally reset the controller (useful when observer has state estimate)
         if self.external_controller is not None:
             # TODO add gaussian noise to sensors in observation? Match noise from lqg
+            base_acc_meas = observation[self._obs_indices['base_acc_start']:self._obs_indices['base_acc_end']]
             base_quat_meas = observation[self._obs_indices['quat_start']:self._obs_indices['quat_end']]
             base_angular_velocity_meas = observation[self._obs_indices['angular_vel_start']:self._obs_indices['angular_vel_end']]
             joint_pos_meas = observation[self._obs_indices['joint_pos_start']:self._obs_indices['joint_pos_end']] + self._default_joint_pos
             joint_vel_meas = observation[self._obs_indices['joint_vel_start']:self._obs_indices['joint_vel_end']]
-            measurements = np.concatenate([joint_pos_meas, joint_vel_meas, base_quat_meas, base_angular_velocity_meas])
+            measurements = np.concatenate([joint_pos_meas, joint_vel_meas, base_quat_meas, base_angular_velocity_meas, base_acc_meas])
             self.external_controller.reset(measurements)
 
         return observation
