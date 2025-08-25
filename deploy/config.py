@@ -24,12 +24,15 @@ class Config:
             self.leg_joint2motor_idx = config["leg_joint2motor_idx"]
             self.kps = config["kps"]
             self.kds = config["kds"]
-            self.default_angles = np.array(config["default_angles"], dtype=np.float32)
+
+            self.leg_target = np.array(config["leg_target"], dtype=np.float32)
 
             self.arm_waist_joint2motor_idx = config["arm_waist_joint2motor_idx"]
             self.arm_waist_kps = config["arm_waist_kps"]
             self.arm_waist_kds = config["arm_waist_kds"]
             self.arm_waist_target = np.array(config["arm_waist_target"], dtype=np.float32)
+
+            self.default_angles = np.concatenate([self.leg_target, self.arm_waist_target], axis=0)
 
             self.ang_vel_scale = config["ang_vel_scale"]
             self.dof_pos_scale = config["dof_pos_scale"]

@@ -174,6 +174,7 @@ class G1LQR(LQRPolicy):
         relative_joint_pos = observation[16:39] 
         joint_vel = observation[39:62]
         joint_pos = relative_joint_pos + self.qpos0[7:]
+        print(self.qpos0[7:])
 
         # Transform acceleration from body frame to world frame
         # base_quat is [w, x, y, z], but Rotation.from_quat expects [x, y, z, w]

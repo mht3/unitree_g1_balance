@@ -31,41 +31,35 @@ class StateReader(Controller):
         '''
         self.counter += 1
         # Get the current joint position and velocity
-        for i in range(len(self.config.leg_joint2motor_idx)):
-            self.qj[i] = self.low_state.motor_state[self.config.leg_joint2motor_idx[i]].q
-            self.dqj[i] = self.low_state.motor_state[self.config.leg_joint2motor_idx[i]].dq
+        all_joint2motor_idx = self.config.leg_joint2motor_idx + self.config.arm_waist_joint2motor_idx
+        for i in range(len(all_joint2motor_idx)):
+            self.qj[i] = self.low_state.motor_state[all_joint2motor_idx[i]].q
+            self.dqj[i] = self.low_state.motor_state[all_joint2motor_idx[i]].dq
 
-        # imu_state quaternion: w, x, y, z
-        quat = self.low_state.imu_state.quaternion
-        # self.low_state.imu_state
-        ang_vel = np.array([self.low_state.imu_state.gyroscope], dtype=np.float32)
+
 
         # create observation
+
+        # imu acceleration
+        acc = self.low_state.imu_state.accelerometer
+        # imu_state quaternion: w, x, y, z
+        quat = self.low_state.imu_state.quaternion
+        orientation = self.low_state.imu_state.rpy
+        # self.low_state.imu_state
+        ang_vel = np.array([self.low_state.imu_state.gyroscope], dtype=np.float32) * self.config.ang_vel_scale
         gravity_orientation = get_gravity_orientation(quat)
         qj_obs = self.qj.copy()
         dqj_obs = self.dqj.copy()
         qj_obs = (qj_obs - self.config.default_angles) * self.config.dof_pos_scale
         dqj_obs = dqj_obs * self.config.dof_vel_scale
-        ang_vel = ang_vel * self.config.ang_vel_scale
-        period = 0.8
-        count = self.counter * self.config.control_dt
-        phase = count % period / period
-        sin_phase = np.sin(2 * np.pi * phase)
-        cos_phase = np.cos(2 * np.pi * phase)
 
-        self.cmd[0] = self.remote_controller.ly
-        self.cmd[1] = self.remote_controller.lx * -1
-        self.cmd[2] = self.remote_controller.rx * -1
-
-        num_actions = self.config.num_actions
-        self.obs[:3] = ang_vel
-        self.obs[3:6] = gravity_orientation
-        self.obs[6:9] = self.cmd * self.config.cmd_scale * self.config.max_cmd
-        self.obs[9 : 9 + num_actions] = qj_obs
-        self.obs[9 + num_actions : 9 + num_actions * 2] = dqj_obs
-        self.obs[9 + num_actions * 2 : 9 + num_actions * 3] = self.action
-        self.obs[9 + num_actions * 3] = sin_phase
-        self.obs[9 + num_actions * 3 + 1] = cos_phase
+        self.obs[:3] = acc
+        self.obs[3:7] = quat
+        self.obs[7:10] = orientation
+        self.obs[10:13] = ang_vel
+        self.obs[13:16] = gravity_orientation
+        self.obs[16:39] = qj_obs
+        self.obs[39:62] = dqj_obs
 
         return self.obs
 
