@@ -1,6 +1,7 @@
 import os
 import numpy as np
 import time
+from scipy.spatial.transform import Rotation
 
 from unitree_sdk2py.core.channel import ChannelFactoryInitialize
 from unitree_sdk2py.core.channel import ChannelFactoryInitialize
@@ -41,7 +42,13 @@ class StateReader(Controller):
         # create observation
 
         # imu acceleration
-        acc = self.low_state.imu_state.accelerometer
+        gravity_world = np.array([0., 0., -9.81], dtype=np.float32)  # Gravity in world frame
+        quat_xyzw = np.array([quat[1], quat[2], quat[3], quat[0]])
+        R = Rotation.from_quat(quat_xyzw)
+        acc_body = self.low_state.imu_state.accelerometer
+        acc_world = R.apply(acc_body)
+        acc = acc_world + gravity_world
+        
         # imu_state quaternion: w, x, y, z
         quat = self.low_state.imu_state.quaternion
         orientation = self.low_state.imu_state.rpy
