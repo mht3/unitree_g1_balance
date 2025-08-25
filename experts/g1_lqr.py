@@ -175,14 +175,12 @@ class G1LQR(LQRPolicy):
         joint_vel = observation[39:62]
         joint_pos = relative_joint_pos + self.qpos0[7:]
 
-        # Transform acceleration from body frame to world frame
-        # base_quat is [w, x, y, z], but Rotation.from_quat expects [x, y, z, w]
-        quat_xyzw = np.array([base_quat[1], base_quat[2], base_quat[3], base_quat[0]])
-        R = Rotation.from_quat(quat_xyzw)
-        base_acc_world = R.apply(base_acc)
+        # quat_xyzw = np.array([base_quat[1], base_quat[2], base_quat[3], base_quat[0]])
+        # R = Rotation.from_quat(quat_xyzw)
+        # base_acc_world = R.apply(base_acc)
         
-        # Integrate acceleration in world frame
-        self.base_vel = self.base_vel + self.dt * base_acc_world
+        # integration
+        self.base_vel = self.base_vel + self.dt * base_acc
         self.base_pos = self.base_pos + self.dt * self.base_vel
         
         qpos = np.concatenate([self.base_pos, base_quat, joint_pos])
