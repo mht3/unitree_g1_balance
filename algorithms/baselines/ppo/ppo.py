@@ -29,8 +29,8 @@ class PPOTrainer(Trainer):
                         default=[64, 64],
                         help='A list of integers representing the sizes of hidden layers of the value network.')
         parser.add_argument('--n_epochs', type=int, default=10, help='Number of epochs for PPO surrogate loss (after each rollout is collected). Default: 10')
-        parser.add_argument('--n_steps', type=int, default=2048, help='The number of steps to run for each environment per update. Default: 2048')
-        parser.add_argument('--batch_size', type=int, default=64, help='Minibatch size. Default 64')
+        parser.add_argument('--n_steps', type=int, default=3072, help='The number of steps to run for each environment per update. Default: 2048')
+        parser.add_argument('--batch_size', type=int, default=256, help='Minibatch size. Default 64')
         parser.add_argument('--gae_lambda', type=float, default=0.95, help='TD(lambda) value for GAE.') 
         parser.add_argument('--ent_coef', type=float, default=0.0, help='Entropy weighted loss term.') 
         parser.add_argument('--vf_coef', type=float, default=0.5, help='Value function weighted loss term.') 

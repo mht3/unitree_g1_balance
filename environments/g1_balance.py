@@ -254,10 +254,10 @@ class G1BalanceEnv(MujocoEnv, utils.EzPickle):
         arm_indices = [13, 14, 15, 16, 17, 18, 19, 20, 21, 22]
 
         # reward weighting
-        self._orientation_weight = 1.0
+        self._orientation_weight = 10.0
         self._ctrl_cost_weight = 0 #1e-4
-        self._position_weight[leg_indices] = 1e-2 #5.0
-        self._position_weight[waist_index] = 1e-2 #3.0
+        self._position_weight[leg_indices] = 1 #5.0
+        self._position_weight[waist_index] = 1e-1 #3.0
         self._position_weight[arm_indices] = 1e-2 #1.0
         self._joint_vel_weight = 1e-4
         self._angular_vel_weight = 1e-4
@@ -325,6 +325,9 @@ class G1BalanceEnv(MujocoEnv, utils.EzPickle):
             self.action_space = Box(
                 low=-1.0, high=1.0, shape=(self._original_action_space.shape[0],), dtype=np.float32
             )
+
+        # used for LQG state estimate
+        self.external_controller = None
 
 
     @staticmethod
@@ -436,12 +439,14 @@ class G1BalanceEnv(MujocoEnv, utils.EzPickle):
             action_smoothness_cost = 0.0
         
         # projected gravity
-        gravity_orientation = observation[self._obs_indices['gravity_start']:self._obs_indices['gravity_end']]
-        unit_gravity_desired = np.array([0., 0., -1.])
-        gravity_error = gravity_orientation - unit_gravity_desired
-        
+        # gravity_orientation = observation[self._obs_indices['gravity_start']:self._obs_indices['gravity_end']]
+        # unit_gravity_desired = np.array([0., 0., -1.])
+        # gravity_error = gravity_orientation - unit_gravity_desired
+
+        orientation = observation[self._obs_indices['orientation_start']:self._obs_indices['orientation_end']]
+
         # penalize gravity orientation error using MSE
-        orientation_cost = -self._orientation_weight * np.sum(gravity_error**2)
+        orientation_cost = -self._orientation_weight * np.sum(orientation[:2]**2)
 
         # Angular velocity penalty
         angular_vel = observation[self._obs_indices['angular_vel_start']:self._obs_indices['angular_vel_end']]
@@ -449,13 +454,13 @@ class G1BalanceEnv(MujocoEnv, utils.EzPickle):
 
         # Joint position cost using cosine similarity
         relative_joint_positions = observation[self._obs_indices['joint_pos_start']:self._obs_indices['joint_pos_end']]
-        # joint_pos_cost = -np.sum(self._position_weight * np.square(relative_joint_positions))
+        wrapped_error = np.atan2(np.sin(relative_joint_positions), np.cos(relative_joint_positions)) 
+        joint_pos_cost = -np.sum(self._position_weight * np.square(wrapped_error))
         
         # Compute cosine similarities (1 = perfect alignment, -1 = opposite)
-        joint_cosine_similarities = cosine_similarity_angles(relative_joint_positions)
-        
-        joint_pos_cost = -np.sum(self._position_weight * (1 - joint_cosine_similarities))
-        # joint_pos_cost = -np.sum(self._position_weight * np.square(relative_joint_positions))
+        # joint_cosine_similarities = cosine_similarity_angles(relative_joint_positions)
+        # joint_pos_cost = -np.sum(self._position_weight * (1 - joint_cosine_similarities))
+
 
         # joint velocity cost (target velocity is 0)
         joint_velocities = observation[self._obs_indices['joint_vel_start']:self._obs_indices['joint_vel_end']]
@@ -463,7 +468,7 @@ class G1BalanceEnv(MujocoEnv, utils.EzPickle):
 
         survival_reward = 0
         if not terminated:
-            survival_reward = 1.0
+            survival_reward = 2.
         
         # print("#####")
         # print("Orientation Cost:", orientation_cost)
