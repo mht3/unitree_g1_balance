@@ -18,7 +18,7 @@ class G1LQR(LQRPolicy):
         self.nv = self.model.nv
         # number of actuators (23)
         self.nu = self.model.nu 
-        self.dt = 0.02
+        self.dt = self.env.dt
         self.A, self.B = self.define_state_space_matrices()
         self.Q, self.R = self.define_cost_matrices()
         self.K = G1LQR.lqr(self.A, self.B, self.Q, self.R)
@@ -165,12 +165,12 @@ class G1LQR(LQRPolicy):
             observation = observation[0]
 
 
-        # obs: [quat (4), orientation (3), angular_velocity(3), gravity_orientation(3), base_accel, relative_joint_pos(23), joint_vel(23)]
+        # obs: [base_acc, quat (4), orientation (3), angular_velocity(3), gravity_orientation(3),relative_joint_pos(23), joint_vel(23)]
+        base_acc = observation[:3]
         base_quat = observation[3:7]
         base_orientation = observation[7:10]
         base_angular_velocity = observation[10:13]
-        relative_gravity_orientation = observation[10:13] - np.array([0, 0, -1])
-        base_acc = observation[13:16]
+        relative_gravity_orientation = observation[13:16] - np.array([0, 0, -1])
         relative_joint_pos = observation[16:39] 
         joint_vel = observation[39:62]
         joint_pos = relative_joint_pos + self.qpos0[7:]

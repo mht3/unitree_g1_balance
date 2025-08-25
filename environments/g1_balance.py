@@ -208,7 +208,6 @@ class G1BalanceEnv(MujocoEnv, utils.EzPickle):
     | -------------------------------------------- | --------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
     | `frame_skip`                                 | **int**   | `10`              | how many MuJoCo physics steps happen between each gym environment step. By default, step() runs at 50 hz, so MuJoCo internally updates at 500 hz.                        |
     | `normalized_actions`                           | **bool**  | `True`           | If true, normalize actions to [-1, 1] range for better RL training stability                                                                                              |
-    | `reset_noise_scale`                          | **float** | `1e-2`           | Scale of random perturbations of initial position and velocity (see section on Starting State)                                                                            |
     """
 
     metadata = {
@@ -222,9 +221,8 @@ class G1BalanceEnv(MujocoEnv, utils.EzPickle):
 
     def __init__(
         self,
-        frame_skip=10,
+        frame_skip=5,
         default_camera_config=DEFAULT_CAMERA_CONFIG,
-        reset_noise_scale=1e-2,
         normalized_actions=True,
         include_previous_actions=False,
         action_smoothness=False,
@@ -234,7 +232,6 @@ class G1BalanceEnv(MujocoEnv, utils.EzPickle):
             self,
             frame_skip,
             default_camera_config,
-            reset_noise_scale,
             normalized_actions,
             include_previous_actions,
             action_smoothness,
@@ -242,8 +239,7 @@ class G1BalanceEnv(MujocoEnv, utils.EzPickle):
         )
         # healthy roll and pitch range
         # roll and pitch can't exceed 78.75 degrees
-        self._healthy_rp_range = np.pi / 4 #7 * np.pi / 16
-        self._reset_noise_scale = reset_noise_scale
+        self._healthy_rp_range = 7 * np.pi / 16
 
         self._position_weight = np.ones(23)
         # Left leg: hip pitch(0), hip roll(1), hip yaw(2), knee(3), ankle pitch(4), ankle roll(5)
@@ -256,7 +252,7 @@ class G1BalanceEnv(MujocoEnv, utils.EzPickle):
 
         # reward weighting
         self._orientation_weight = 10.0
-        self._ctrl_cost_weight = 0 #1e-4
+        self._ctrl_cost_weight = 1e-4
         self._position_weight[leg_indices] = 1 #5.0
         self._position_weight[waist_index] = 1e-1 #3.0
         self._position_weight[arm_indices] = 1e-2 #1.0
@@ -303,8 +299,9 @@ class G1BalanceEnv(MujocoEnv, utils.EzPickle):
         self._obs_indices = self._calculate_obs_indices()
         
         # Calculate observation space size
-        # base_quat (4) + base_orientation (3) + projected_gravity (3) + angular_velocity (3) + joint_pos (23) + joint_vel (23) + optional previous_actions (23)
+        # base_acceleration + base_quat (4) + base_orientation (3) + projected_gravity (3) + angular_velocity (3) + joint_pos (23) + joint_vel (23) + optional previous_actions (23)
 
+        acc_size = 3
         quat_size = 4
         orientation_size = 3
         gravity_orientation_size = 3
@@ -313,7 +310,7 @@ class G1BalanceEnv(MujocoEnv, utils.EzPickle):
         joint_vel_size = 23
         previous_actions_size = 23 if self._include_previous_actions else 0
         
-        obs_size = quat_size + orientation_size + gravity_orientation_size + angular_vel_size + joint_pos_size + joint_vel_size + previous_actions_size
+        obs_size = acc_size + quat_size + orientation_size + gravity_orientation_size + angular_vel_size + joint_pos_size + joint_vel_size + previous_actions_size
 
         self.observation_space = Box(
             low=-np.inf, high=np.inf, shape=(obs_size,), dtype=np.float64
@@ -334,14 +331,12 @@ class G1BalanceEnv(MujocoEnv, utils.EzPickle):
     @staticmethod
     def add_args(parser):
         parser.add_argument('--no_normalized_actions', action='store_false', dest='normalized_actions', default=True)
-        parser.add_argument('--reset-noise-scale', type=float, default=1e-2)
         parser.add_argument('--include_previous_actions', action='store_true', dest='include_previous_actions', default=True)
 
     
     @staticmethod
     def get_env_kwargs(args):
-        kwargs = {'reset_noise_scale': args.reset_noise_scale,
-                  'normalized_actions': args.normalized_actions,
+        kwargs = {'normalized_actions': args.normalized_actions,
                   'include_previous_actions': args.include_previous_actions,
                   }
 
@@ -574,11 +569,12 @@ class G1BalanceEnv(MujocoEnv, utils.EzPickle):
         # optionally reset the controller (useful when observer has state estimate)
         if self.external_controller is not None:
             # TODO add gaussian noise to sensors in observation? Match noise from lqg
+            base_acc_meas = observation[self._obs_indices['base_acc_start']:self._obs_indices['base_acc_end']]
             base_quat_meas = observation[self._obs_indices['quat_start']:self._obs_indices['quat_end']]
             base_angular_velocity_meas = observation[self._obs_indices['angular_vel_start']:self._obs_indices['angular_vel_end']]
             joint_pos_meas = observation[self._obs_indices['joint_pos_start']:self._obs_indices['joint_pos_end']] + self._default_joint_pos
             joint_vel_meas = observation[self._obs_indices['joint_vel_start']:self._obs_indices['joint_vel_end']]
-            measurements = np.concatenate([joint_pos_meas, joint_vel_meas, base_quat_meas, base_angular_velocity_meas])
+            measurements = np.concatenate([joint_pos_meas, joint_vel_meas, base_quat_meas, base_angular_velocity_meas, base_acc_meas])
             self.external_controller.reset(measurements)
 
         return observation
